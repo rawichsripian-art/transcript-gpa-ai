@@ -55,7 +55,9 @@ The design rule is **the AI reads, the code calculates**:
 | FL | ภาษาต่างประเทศ | อ จ ญ ฝ ย ร ล ข |
 | IS | การศึกษาค้นคว้าด้วยตนเอง | I |
 
-Activities (ก) and pass/fail or incomplete grades (ผ มผ ร มส) are not counted in GPA.
+English Program transcripts are supported too: course codes like `THA31101`, `MATH31207`, `WORK ED31101`, `ENG30201`, and yearly headings like "First Year (2024)". Tested on a real English transcript: 66 of 66 courses read correctly and the GPA matched the school's 3.43.
+
+Activities (ก) and pass/fail, audit or incomplete grades (ผ มผ ร มส, S U I A UE) are not counted in GPA.
 
 ## Privacy
 

@@ -16,12 +16,28 @@ export const AREAS = [
 ];
 const ACTIVITY = 'ก'; // กิจกรรมพัฒนาผู้เรียน: pass/fail, no grade points
 
+// English Program transcripts use Latin prefixes instead of Thai letters
+// (THA31101, MATH31101, WORK ED31101, ENG31101, I30201)
+const LATIN = [
+  [/^THA/, 'THA'], [/^MATH?/, 'MATH'], [/^SCI/, 'SCI'], [/^SOC/, 'SOC'],
+  [/^(HPE|HEA|PE)/, 'HPE'], [/^ART/, 'ART'], [/^(WORK|WOR|OCC|CAR)/, 'WORK'],
+  [/^(ENG|CHI|CHN|JPN|JAP|FRE|FRA|GER|KOR|SPA|FL)/, 'FL'], [/^(IS|I)\d/, 'IS'],
+];
+
 export function areaOf(code) {
-  const c = String(code || '').trim().charAt(0).toUpperCase();
+  const s = String(code || '').replace(/\s+/g, '').toUpperCase();
+  const c = s.charAt(0);
   if (c === ACTIVITY) return 'activity';
+  if (/^[A-Z]/.test(c)) {
+    const hit = LATIN.find(([re]) => re.test(s));
+    return hit ? hit[1] : 'other';
+  }
   const a = AREAS.find(a => a.letters.includes(c));
   return a ? a.id : 'other';
 }
+
+// Marks with no grade points: Thai ผ มผ ร มส, English S U I A UE
+const NO_POINTS = /^(ผ|มผ|ร|มส|S|U|I|A|UE)$/i;
 
 // Numeric grade 0–4 in steps of 0.5, or null for pass/fail and incomplete marks (ผ มผ ร มส)
 export function gradePoints(grade) {
@@ -48,7 +64,7 @@ export function checkCourse(c) {
   // e.g. a stray pen mark turns "1.0" into "11.0" or "21.0"
   else if (cr > 3) issues.push(`หน่วยกิต ${cr} สูงผิดปกติ` + (cr % 10 === 1 ? ' (น่าจะเป็น 1.0)' : ''));
   else if (cr * 2 !== Math.round(cr * 2)) issues.push(`หน่วยกิต ${cr} ไม่ใช่ทีละ 0.5`);
-  if (areaOf(c.code) !== 'activity' && gradePoints(c.grade) === null && !/^(ผ|มผ|ร|มส)$/.test(String(c.grade).trim())) issues.push(`เกรด "${c.grade}" อ่านไม่ได้`);
+  if (areaOf(c.code) !== 'activity' && gradePoints(c.grade) === null && !NO_POINTS.test(String(c.grade).trim())) issues.push(`เกรด "${c.grade}" อ่านไม่ได้`);
   if (areaOf(c.code) === 'other') issues.push(`ไม่รู้กลุ่มสาระของรหัส ${c.code}`);
   return issues;
 }
@@ -110,11 +126,22 @@ export function termKey(label) {
   const slash = s.match(/([123])\s*\/\s*(25\d\d)/);
   if (slash) return `${slash[1]}/${slash[2]}`;
   const year = s.match(/25\d\d/), sem = s.match(/ภาคเรียนที่\s*([123])/);
-  return year && sem ? `${sem[1]}/${year[0]}` : s.trim();
+  if (year && sem) return `${sem[1]}/${year[0]}`;
+  // English transcripts: "First Year (2024)", "Semester 1/2024", "Grade 10 (2024)"
+  const en = s.match(/semester\s*([123])\D{0,6}((?:19|20)\d\d)/i);
+  if (en) return `${en[1]}/${en[2]}`;
+  const ad = s.match(/\b((?:19|20)\d\d)\b/);
+  if (ad) return ad[1];
+  return s.trim();
 }
 
 // Sort "1/2567", "2/2567", "1/2568" by year then semester
 export function sortTerms(terms) {
-  const key = t => { const m = String(t.term).match(/^([123])\/(\d{4})$/); return m ? Number(m[2]) * 10 + Number(m[1]) : 1e9; };
+  const key = t => {
+    const m = String(t.term).match(/^([123])\/(\d{4})$/);
+    if (m) return Number(m[2]) * 10 + Number(m[1]);
+    const y = String(t.term).match(/^(\d{4})$/);
+    return y ? Number(y[1]) * 10 : 1e9;
+  };
   return [...terms].sort((a, b) => key(a) - key(b));
 }

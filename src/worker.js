@@ -44,15 +44,18 @@ const SCHEMA = {
   required: ['rows'],
 };
 
-const PROMPT = `You are transcribing a Thai high-school transcript (ระเบียนแสดงผลการเรียน / ปพ.1) into JSON.
+const PROMPT = `You are transcribing a Thai high-school transcript (ระเบียนแสดงผลการเรียน / ปพ.1, in Thai or in English) into JSON.
 Output every row of the grade table in reading order. Rules:
 - Read the whole first column of the table from top to bottom, then the whole second column, then the third. Never skip a row, and keep going until the last row of the last column.
-- When a semester heading appears (ภาคเรียนที่ ..., ปีการศึกษา ...), output it as a row with kind "term" and the heading text as label, at the position where it appears.
+- When a semester or year heading appears (ภาคเรียนที่ ..., ปีการศึกษา ..., "First Year (2024)", "Semester 1/2024"), output it as a row with kind "term" and the heading text as label, at the position where it appears. If the heading is a grade level column title like "GRADE 10" and a year line follows, use the year line.
+- Group titles such as "Fundamental Subjects", "Additional Subjects", "Learner Development Activities" are NOT terms: skip them.
+- Rows without a course code (for example activities graded S) can be skipped.
 - If the page has several semester tables side by side, each with its own heading above it, output the heading row first and then that table's courses.
 - For courses output only code, credits and grade (no course names), to keep the output short.
 - Copy values exactly as printed. Do not calculate, guess, round or correct anything, even if a value looks wrong.
-- Course codes start with a Thai letter (ท ค ว ส พ ศ ง อ ก) or a Latin letter (e.g. I for IS), followed by 5 digits.
-- Grades can be numbers (4, 3.5, 3, 2.5, 2, 1.5, 1, 0) or Thai letters (ผ, มผ, ร, มส). Keep Thai letters as Thai.
+- Course codes start with a Thai letter (ท ค ว ส พ ศ ง อ ก) or Latin letters (THA, MATH, SCI, SOC, HPE, ART, WORK ED, ENG, I), followed by 5 digits. Copy the whole code, including a space if printed (e.g. "WORK ED31101").
+- Grades can be numbers (4, 3.5, 3, 2.5, 2, 1.5, 1, 0), Thai letters (ผ, มผ, ร, มส) or English letters (S, U, I, A, UE). Keep them as printed.
+- A summary table may give the cumulative "GPA" or "คะแนนเฉลี่ยสะสม"; put it in "cumulative".
 - If the school prints per-semester totals or GPA (คะแนนเฉลี่ย), put them in "reported"; put the cumulative GPA (คะแนนเฉลี่ยสะสม) in "cumulative".
 - Ignore names, ID numbers, addresses, signatures and stamps. Do not output personal information.`;
 

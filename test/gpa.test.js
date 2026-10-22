@@ -73,7 +73,7 @@ test('suspicious values are flagged for a person to check', () => {
   assert.match(checkCourse({ code: 'อ30202', credits: 21, grade: '4' }).join(), /น่าจะเป็น 1\.0/);
   assert.match(checkCourse({ code: 'อ30201', credits: 11, grade: '4' }).join(), /น่าจะเป็น 1\.0/);
   assert.match(checkCourse({ code: 'ค31101', credits: 1.3, grade: '4' }).join(), /0\.5/);
-  assert.match(checkCourse({ code: 'ค31101', credits: 1, grade: 'A' }).join(), /อ่านไม่ได้/);
+  assert.match(checkCourse({ code: 'ค31101', credits: 1, grade: 'B' }).join(), /อ่านไม่ได้/);
   assert.deepEqual(checkCourse({ code: 'ก30965', credits: 0.5, grade: 'ผ' }), []);
   assert.deepEqual(checkCourse({ code: 'ค31101', credits: 2, grade: '3.5' }), []);
 });
@@ -87,6 +87,22 @@ test('results are checked against the GPA the school printed (rounded or truncat
   assert.ok(verify(r, [{ term: '1/2567', gpa: 3.26 }])[0].ok);
   // a different number means a row was misread
   assert.equal(verify(r, [{ term: '1/2567', gpa: 3.5 }])[0].ok, false);
+});
+
+test('English Program transcripts: Latin course codes, S grades, year headings', () => {
+  assert.equal(areaOf('THA31101'), 'THA');
+  assert.equal(areaOf('MATH31207'), 'MATH');
+  assert.equal(areaOf('SCI31294'), 'SCI');
+  assert.equal(areaOf('SOC30209'), 'SOC');
+  assert.equal(areaOf('HPE31101'), 'HPE');
+  assert.equal(areaOf('ART31103'), 'ART');
+  assert.equal(areaOf('WORK ED31101'), 'WORK');
+  assert.equal(areaOf('ENG30201'), 'FL');
+  assert.equal(areaOf('I30202'), 'IS');
+  assert.equal(termKey('First Year (2024)'), '2024');
+  assert.equal(termKey('Semester 2/2025'), '2/2025');
+  assert.deepEqual(checkCourse({ code: 'ENG31101', credits: 1, grade: 'S' }), []);
+  assert.deepEqual(sortTerms([{ term: '2025' }, { term: '2024' }]).map(t => t.term), ['2024', '2025']);
 });
 
 test('terms are sorted by year, then semester', () => {
