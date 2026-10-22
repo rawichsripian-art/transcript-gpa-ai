@@ -190,8 +190,8 @@ $('file').addEventListener('change', e => { const f = e.target.files[0]; e.targe
 ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) run(f); });
-// The sample shows what the AI returned for sample-transcript.jpg earlier,
-// so trying the demo is instant and doesn't use the daily AI quota
+// The demo loads the rows printed on sample-transcript.jpg (sample/answer-key.json,
+// made by tools/make-sample.mjs), so it is instant and doesn't use the daily AI quota
 $('sample').addEventListener('click', async () => {
   $('upload').hidden = true;
   try { show(await (await fetch('sample-result.json')).json()); }

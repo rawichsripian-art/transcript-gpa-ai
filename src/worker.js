@@ -63,8 +63,25 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
 });
 
-async function readPage(env, dataUrl, model) {
-  const out = await env.AI.run(model, {
+// Two AI accounts: "own" is the AI binding of the account this worker runs on;
+// "borrowed" is another person's account, used with their permission through the
+// REST API (secrets BORROWED_ACCOUNT_ID and BORROWED_AI_TOKEN). Borrowed is used
+// only when our own free quota is gone, and has its own small daily cap.
+const QUOTA_ERROR = /4006|daily free allocation/i;
+
+async function runModel(env, account, model, input) {
+  if (account === 'own') return env.AI.run(model, input);
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.BORROWED_ACCOUNT_ID}/ai/run/${model}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${env.BORROWED_AI_TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`borrowed account ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.body;
+}
+
+async function readPage(env, dataUrl, model, account) {
+  const out = await runModel(env, account, model, {
     messages: [
       { role: 'system', content: PROMPT },
       { role: 'user', content: [
@@ -132,16 +149,42 @@ function merge(results) {
   };
 }
 
-// Count pages per UTC day (when the Workers AI free quota resets) and refuse once the
-// daily budget is used. KV is eventually consistent, so this is a soft cap, which is enough here.
-async function reservePages(env, n) {
+// Count pages per account per UTC day (when the Workers AI free quota resets) and refuse once
+// that account's budget is used. KV is eventually consistent, so this is a soft cap, which is enough here.
+const hasBorrowed = env => Boolean(env.BORROWED_ACCOUNT_ID && env.BORROWED_AI_TOKEN);
+const budget = (env, account) => account === 'own' ? Number(env.DAILY_PAGES) || 8 : Number(env.BORROWED_DAILY_PAGES) || 5;
+const dayKey = account => `pages:${account === 'own' ? '' : account + ':'}${new Date().toISOString().slice(0, 10)}`;
+
+async function reservePages(env, account, n) {
   if (!env.USAGE) return true;
-  const limit = Number(env.DAILY_PAGES) || 8;
-  const key = 'pages:' + new Date().toISOString().slice(0, 10);
+  const key = dayKey(account);
   const used = Number(await env.USAGE.get(key)) || 0;
-  if (used + n > limit) return false;
+  if (used + n > budget(env, account)) return false;
   await env.USAGE.put(key, String(used + n), { expirationTtl: 2 * 86400 });
   return true;
+}
+
+// Mark an account as spent for today (its real quota ran out, e.g. used by other work)
+async function markSpent(env, account) {
+  if (env.USAGE) await env.USAGE.put(dayKey(account), String(budget(env, account)), { expirationTtl: 2 * 86400 });
+}
+
+// Try own first, then borrowed. Returns the results and which account did the work.
+async function readAll(env, pages) {
+  const accounts = ['own', ...(hasBorrowed(env) ? ['borrowed'] : [])];
+  let lastError = null;
+  for (const account of accounts) {
+    if (!(await reservePages(env, account, pages.length))) continue;
+    try {
+      return { account, results: await Promise.all(pages.map(p => readPage(env, p, MODEL, account))) };
+    } catch (e) {
+      lastError = e;
+      if (!QUOTA_ERROR.test(String(e?.message || e))) throw e; // a real error: don't spend the other quota
+      await markSpent(env, account);
+    }
+  }
+  if (lastError) throw lastError;
+  return null; // every budget used
 }
 
 async function handleExtract(request, env) {
@@ -161,15 +204,14 @@ async function handleExtract(request, env) {
     if (p.length > MAX_PAGE_BYTES) return json({ error: 'A page image is too large.' }, 413);
   }
 
-  if (!(await reservePages(env, pages.length))) {
-    return json({ error: 'วันนี้ใช้โควตา AI ฟรีครบแล้ว ลองใหม่พรุ่งนี้หลัง 7 โมงเช้า (เวลาไทย) หรือกด "ลองกับใบตัวอย่าง" ได้เลย' }, 429);
-  }
-
+  const quotaGone = () => json({ error: 'วันนี้ใช้โควตา AI ฟรีครบแล้ว ลองใหม่พรุ่งนี้หลัง 7 โมงเช้า (เวลาไทย) หรือกด "ลองกับใบตัวอย่าง" ได้เลย' }, 429);
   try {
-    const results = await Promise.all(pages.map(p => readPage(env, p, MODEL)));
-    const usage = results.reduce((u, r) => ({ input: u.input + (r.usage?.prompt_tokens || 0), output: u.output + (r.usage?.completion_tokens || 0) }), { input: 0, output: 0 });
-    return json({ ...merge(results), model: MODEL, usage });
+    const done = await readAll(env, pages);
+    if (!done) return quotaGone();
+    const usage = done.results.reduce((u, r) => ({ input: u.input + (r.usage?.prompt_tokens || 0), output: u.output + (r.usage?.completion_tokens || 0) }), { input: 0, output: 0 });
+    return json({ ...merge(done.results), model: MODEL, account: done.account, usage });
   } catch (e) {
+    if (QUOTA_ERROR.test(String(e?.message || e))) return quotaGone();
     return json({ error: 'The AI could not read this file. Try a clearer scan.', detail: String(e?.message || e).slice(0, 300) }, 502);
   }
 }

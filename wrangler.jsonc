@@ -11,7 +11,9 @@
   ],
   "vars": {
     // One page costs about 1,000 neurons; the free plan includes 10,000 per day
-    "DAILY_PAGES": "8"
+    "DAILY_PAGES": "8",
+    // Pages per day allowed on a borrowed account (secrets BORROWED_ACCOUNT_ID, BORROWED_AI_TOKEN)
+    "BORROWED_DAILY_PAGES": "5"
   },
   // 10 extractions per minute per visitor
   "ratelimits": [

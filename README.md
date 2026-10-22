@@ -39,7 +39,7 @@ The design rule is **the AI reads, the code calculates**:
 - **The AI should copy mistakes, not fix them.** The real transcript had "21.0" credits where it meant "1.0" (a stray pen mark). The AI copied it faithfully, `gpa.js` flagged it as "probably 1.0", and the user corrects it in the table.
 - **Thai transcripts truncate GPA instead of rounding** (3.6875 → 3.68). The app shows truncated values and accepts either when checking against the school's numbers.
 - **Reasoning ("thinking") mode made the model time out** after 2 minutes. Turning it off and streaming the response brought one page to about a minute.
-- **Free has a budget.** One page uses about 3,900 input and 2,800 output tokens, roughly 1,000 of the 10,000 free Workers AI "neurons" per day. The worker counts pages per day in Workers KV and stops at 8, and the demo button replays a saved AI result instead of calling the AI.
+- **Free has a budget.** One page uses about 3,900 input and 2,800 output tokens, roughly 1,000 of the 10,000 free Workers AI "neurons" per day. The worker counts pages per day in Workers KV and stops at 8, and the demo button loads the sample's printed rows (`sample/answer-key.json`) instead of calling the AI.
 
 ### Learning-area codes
 
