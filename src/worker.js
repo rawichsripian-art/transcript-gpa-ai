@@ -1,0 +1,168 @@
+// Transcript GPA AI: the AI only reads the transcript; all maths happens in gpa.js.
+// POST /api/extract  { pages: ["data:image/jpeg;base64,...", ...] }
+//   -> { terms: [{ term, courses: [{ code, name, credits, grade }] }], reported: [...], cumulative, model }
+// Everything else is served from ./public.
+
+import { termKey } from '../public/gpa.js';
+
+const MODEL = '@cf/qwen/qwen3.8-27b';
+// Vision models allowed via ?model= (used to compare accuracy); the default is MODEL
+const MODELS = new Set([MODEL, '@cf/google/gemma-4-26b-a4b-it', '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct']);
+const MAX_PAGES = 4;
+const MAX_PAGE_BYTES = 2_500_000; // per data URL, about a 1.8 MB JPEG
+
+// The model copies rows in reading order; grouping into semesters is done in code
+// (models are good at transcribing, unreliable at keeping track of which column belongs to which term).
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    rows: {
+      type: 'array',
+      description: 'Every row in reading order: whole first column top to bottom, then the next column',
+      items: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['term', 'course'], description: '"term" for a semester heading row, "course" for a course row' },
+          label: { type: 'string', description: 'For a term heading: the heading exactly as printed, e.g. "ปีการศึกษา 2567 ภาคเรียนที่ 1" or "ภาคเรียนที่ 1/2567"' },
+          code: { type: 'string', description: 'Course code exactly as printed, e.g. "ท31101", "ค32208", "I30201", "ก30965"' },
+          credits: { type: 'number' },
+          grade: { type: 'string', description: 'Grade exactly as printed: 4, 3.5, 3, 2.5, 2, 1.5, 1, 0, ผ, มผ, ร, มส' },
+        },
+        required: ['kind'],
+      },
+    },
+    reported: {
+      type: 'array',
+      description: 'Per-semester totals printed by the school, if any',
+      items: {
+        type: 'object',
+        properties: { term: { type: 'string' }, credits: { type: 'number' }, gpa: { type: 'number' } },
+        required: ['term'],
+      },
+    },
+    cumulative: { type: 'number', description: 'Cumulative GPA (GPAX) printed by the school, or 0 if not shown' },
+  },
+  required: ['rows'],
+};
+
+const PROMPT = `You are transcribing a Thai high-school transcript (ระเบียนแสดงผลการเรียน / ปพ.1) into JSON.
+Output every row of the grade table in reading order. Rules:
+- Read the whole first column of the table from top to bottom, then the whole second column, then the third. Never skip a row, and keep going until the last row of the last column.
+- When a semester heading appears (ภาคเรียนที่ ..., ปีการศึกษา ...), output it as a row with kind "term" and the heading text as label, at the position where it appears.
+- If the page has several semester tables side by side, each with its own heading above it, output the heading row first and then that table's courses.
+- For courses output only code, credits and grade (no course names), to keep the output short.
+- Copy values exactly as printed. Do not calculate, guess, round or correct anything, even if a value looks wrong.
+- Course codes start with a Thai letter (ท ค ว ส พ ศ ง อ ก) or a Latin letter (e.g. I for IS), followed by 5 digits.
+- Grades can be numbers (4, 3.5, 3, 2.5, 2, 1.5, 1, 0) or Thai letters (ผ, มผ, ร, มส). Keep Thai letters as Thai.
+- If the school prints per-semester totals or GPA (คะแนนเฉลี่ย), put them in "reported"; put the cumulative GPA (คะแนนเฉลี่ยสะสม) in "cumulative".
+- Ignore names, ID numbers, addresses, signatures and stamps. Do not output personal information.`;
+
+const json = (data, status = 200) => new Response(JSON.stringify(data), {
+  status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+});
+
+async function readPage(env, dataUrl, model) {
+  const out = await env.AI.run(model, {
+    messages: [
+      { role: 'system', content: PROMPT },
+      { role: 'user', content: [
+        { type: 'text', text: 'Extract every course row from this transcript page.' },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ] },
+    ],
+    response_format: { type: 'json_schema', json_schema: SCHEMA },
+    temperature: 0,
+    max_tokens: 6000,
+    // Copying a table needs no step-by-step reasoning; thinking only adds minutes
+    chat_template_kwargs: { enable_thinking: false },
+    // Non-streaming calls are cut off at about 2 minutes; a long table can take longer
+    stream: true,
+  });
+  const text = await collectStream(out);
+  const start = text.indexOf('{'), end = text.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('No JSON in model output: ' + text.slice(0, 200));
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+// Read a Workers AI server-sent-event stream and join the text pieces.
+// Handles both the Workers AI shape {response} and the OpenAI shape {choices[0].delta.content}.
+async function collectStream(stream) {
+  const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '', text = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      const data = line.startsWith('data:') ? line.slice(5).trim() : '';
+      if (!data || data === '[DONE]') continue;
+      try {
+        const evt = JSON.parse(data);
+        text += evt.response ?? evt.choices?.[0]?.delta?.content ?? '';
+      } catch {}
+    }
+  }
+  return text;
+}
+
+// Assign each course to the most recent term heading before it, across all pages.
+// A semester may continue in the next column or on the next page.
+function merge(results) {
+  const terms = new Map(), reported = new Map();
+  let cumulative = 0, current = 'unknown';
+  for (const r of results) {
+    for (const row of r.rows || []) {
+      if (row.kind === 'term') { current = termKey(row.label); continue; }
+      if (!row.code) continue;
+      if (!terms.has(current)) terms.set(current, []);
+      terms.get(current).push({ code: String(row.code).trim(), credits: Number(row.credits) || 0, grade: String(row.grade ?? '').trim() });
+    }
+    for (const rep of r.reported || []) reported.set(termKey(rep.term), { ...rep, term: termKey(rep.term) });
+    if (r.cumulative) cumulative = r.cumulative;
+  }
+  return {
+    terms: [...terms].map(([term, courses]) => ({ term, courses })),
+    reported: [...reported.values()],
+    cumulative,
+  };
+}
+
+async function handleExtract(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'local';
+  if (env.LIMITER) {
+    const { success } = await env.LIMITER.limit({ key: ip });
+    if (!success) return json({ error: 'Too many requests. Please wait a minute and try again.' }, 429);
+  }
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'Send JSON: { "pages": [dataURL, ...] }' }, 400); }
+  const pages = Array.isArray(body?.pages) ? body.pages : [];
+  if (!pages.length) return json({ error: 'No pages received.' }, 400);
+  if (pages.length > MAX_PAGES) return json({ error: `At most ${MAX_PAGES} pages per transcript.` }, 400);
+  for (const p of pages) {
+    if (typeof p !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(p)) return json({ error: 'Pages must be JPEG/PNG/WebP data URLs.' }, 400);
+    if (p.length > MAX_PAGE_BYTES) return json({ error: 'A page image is too large.' }, 413);
+  }
+
+  const asked = new URL(request.url).searchParams.get('model');
+  const model = MODELS.has(asked) ? asked : MODEL;
+  try {
+    const results = await Promise.all(pages.map(p => readPage(env, p, model)));
+    return json({ ...merge(results), model });
+  } catch (e) {
+    return json({ error: 'The AI could not read this file. Try a clearer scan.', detail: String(e?.message || e).slice(0, 300) }, 502);
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === '/api/extract') {
+      if (request.method !== 'POST') return json({ error: 'Use POST' }, 405);
+      return handleExtract(request, env);
+    }
+    return env.ASSETS.fetch(request);
+  },
+};

@@ -1,0 +1,84 @@
+# Transcript GPA AI
+
+**Upload a Thai high-school transcript (ปพ.1) as a PDF or photo. A free AI reads the table, and plain code calculates credits and GPA for every learning area (กลุ่มสาระ) and every semester.**
+
+อัปโหลดใบ ปพ.1 แล้วได้ตาราง หน่วยกิต / เกรดเฉลี่ย แยกตาม 8 กลุ่มสาระและแต่ละภาคเรียน ทันที ใช้ฟรี
+
+![Sample transcript (made-up data)](public/sample-transcript.jpg)
+
+## How it works
+
+```
+PDF ──pdf.js──▶ page images ──▶ Cloudflare Worker ──▶ Workers AI (Qwen vision model)
+                                                          │  copies every row as JSON:
+                                                          │  term heading / code, credits, grade
+                                                          ▼
+                        browser ◀── rows grouped into terms (code, not AI)
+                           │
+                           ▼  gpa.js (no AI)
+          credits & GPA by learning area × term, GPAX,
+          checked against the GPA the school printed
+```
+
+The design rule is **the AI reads, the code calculates**:
+
+| Step | Done by | Why |
+|---|---|---|
+| Read the scanned table | AI (vision model) | Scans vary too much for fixed rules |
+| Decide which term each row belongs to | Code | Models mix up columns; reading order + headings is reliable |
+| Learning area from the course code (ท ค ว ส พ ศ ง อ) | Code | It's a fixed rule |
+| Credits, GPA, rounding | Code | Language models make arithmetic mistakes |
+| Check the result | Code + you | Compared with the school's printed GPA; odd values are flagged and editable |
+
+### Things I learned building it
+
+- **Asking the AI to group rows by semester failed.** On a real ปพ.1, a semester often continues into the next column. The model put rows under the wrong term and silently skipped a whole semester. Asking it only to copy rows *in reading order* (with semester headings as marker rows) and grouping them in code fixed this: 66 of 66 rows correct on a real transcript.
+- **Model choice mattered more than prompt wording.** Llama 4 Scout turned Thai letters into Latin ones (ท → t), and Gemma 4 invented rows. Qwen copied every cell correctly, including two printing errors on the real document.
+- **The AI should copy mistakes, not fix them.** The real transcript had "21.0" credits where it meant "1.0" (a stray pen mark). The AI copied it faithfully, `gpa.js` flagged it as "probably 1.0", and the user corrects it in the table.
+- **Thai transcripts truncate GPA instead of rounding** (3.6875 → 3.68). The app shows truncated values and accepts either when checking against the school's numbers.
+- **Reasoning ("thinking") mode made the model time out** after 2 minutes. Turning it off and streaming the response brought one page to about a minute.
+
+## Privacy
+
+- Files go to Cloudflare Workers AI only to be read. Nothing is stored, and Cloudflare does not train models on Workers AI inputs.
+- The AI is told to skip names, ID numbers and addresses; only course code, credits and grade come back.
+- All calculation happens in your browser.
+
+## Run it yourself
+
+Needs [Node.js](https://nodejs.org) and a free [Cloudflare](https://dash.cloudflare.com/sign-up) account.
+
+```bash
+git clone https://github.com/rawichsripian-art/transcript-gpa-ai
+cd transcript-gpa-ai
+npm test                 # unit tests for the GPA maths (no AI, no network)
+npx wrangler dev         # local server at http://localhost:8787 (the AI call runs on Cloudflare)
+npx wrangler deploy      # publish to your own workers.dev address
+```
+
+Rebuild the made-up sample transcript (Windows, uses Edge):
+
+```bash
+node tools/make-sample.mjs
+powershell -File tools/render-sample.ps1
+```
+
+## Files
+
+| Path | What it does |
+|---|---|
+| `src/worker.js` | API: validates uploads, asks the AI to transcribe rows, groups them into terms |
+| `public/gpa.js` | All the maths: learning areas, grade points, GPA, warnings, checks. Shared by browser, worker and tests |
+| `public/app.js` | Browser: PDF → images (pdf.js), calls the API, shows and edits results, CSV export |
+| `test/gpa.test.js` | Unit tests on a made-up transcript with hand-checked answers |
+| `tools/` | Generates the made-up sample transcript |
+
+## Limits
+
+- Up to 4 pages per file. Clear scans work best.
+- Made for the Thai basic-education curriculum (ปพ.1). Other formats may need prompt changes.
+- Always check the result against your real transcript before using it for an application.
+
+## License
+
+MIT · made by [Rawich Sripian](https://atomengineer.site)

@@ -1,0 +1,67 @@
+﻿<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transcript GPA AI · คำนวณเกรดจากใบ ปพ.1</title>
+  <meta name="description" content="อัปโหลดใบ ปพ.1 (PDF) ให้ AI อ่าน แล้วคำนวณหน่วยกิตและเกรดเฉลี่ยแยกตามกลุ่มสาระและภาคเรียน ใช้ฟรี">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232f5bea'/><text x='50' y='66' font-size='44' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'>GPA</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <p class="eyebrow">Transcript GPA AI</p>
+    <h1>คำนวณเกรดจากใบ ปพ.1 ด้วย AI</h1>
+    <p class="lead">อัปโหลดใบแสดงผลการเรียน (PDF หรือรูป) แล้ว AI จะอ่านรหัสวิชา หน่วยกิต และเกรด จากนั้นโปรแกรมคำนวณหน่วยกิตและเกรดเฉลี่ย <b>แยกตามกลุ่มสาระและภาคเรียน</b> ให้ ใช้ฟรี</p>
+  </header>
+
+  <section class="card upload" id="upload">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="application/pdf,image/png,image/jpeg,image/webp" hidden>
+      <span class="drop-icon" aria-hidden="true">⬆</span>
+      <span class="drop-main">เลือกไฟล์ หรือลากไฟล์มาวาง</span>
+      <span class="drop-sub">PDF, JPG หรือ PNG · ไม่เกิน 4 หน้า</span>
+    </label>
+    <div class="row">
+      <button type="button" class="ghost" id="sample">ลองกับใบตัวอย่าง (ข้อมูลสมมติ)</button>
+    </div>
+    <p class="privacy">🔒 ไฟล์ส่งไปให้ AI ของ Cloudflare อ่านเท่านั้น ไม่ถูกเก็บไว้ และไม่ถูกนำไปเทรน AI · AI ถูกสั่งให้ข้ามชื่อ เลขประจำตัว และที่อยู่ ระบบส่งกลับมาแค่ รหัสวิชา หน่วยกิต และเกรด</p>
+  </section>
+
+  <section class="card status" id="status" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <div><b id="status-main">กำลังเตรียมไฟล์…</b><div class="muted" id="status-sub"></div></div>
+  </section>
+
+  <section id="results" hidden>
+    <div class="summary" id="summary"></div>
+    <div class="card" id="checks-card" hidden><h2>ตรวจกับตัวเลขของโรงเรียน</h2><ul class="checks" id="checks"></ul></div>
+    <div class="card warn" id="warn-card" hidden><h2>ช่วยตรวจ <span class="muted">AI อ่านค่าเหล่านี้แล้วดูผิดปกติ</span></h2><ul id="warnings"></ul><p class="muted small">แก้ได้ในตาราง "รายวิชาที่ AI อ่านได้" ด้านล่าง ผลจะคำนวณใหม่ทันที</p></div>
+
+    <div class="card">
+      <div class="card-head"><h2>สรุปหน่วยกิตและเกรดเฉลี่ย</h2><button type="button" class="ghost small" id="csv">ดาวน์โหลด CSV</button></div>
+      <p class="muted small">แต่ละช่องคือ <b>หน่วยกิต / เกรดเฉลี่ย</b> · ทศนิยม 2 ตำแหน่งแบบไม่ปัดเศษ ตามหลักการคิดเกรดใน ปพ.1</p>
+      <div class="table-wrap"><table id="matrix"></table></div>
+    </div>
+
+    <details class="card" id="rows-card">
+      <summary><h2>รายวิชาที่ AI อ่านได้ <span class="muted" id="rows-count"></span></h2></summary>
+      <p class="muted small">ตรวจกับใบจริงได้ แก้ตัวเลขหรือลบแถวได้เลย · กิจกรรม (รหัส ก) และเกรด ผ / มผ / ร / มส ไม่นำมาคิดเกรดเฉลี่ย</p>
+      <div id="rows"></div>
+    </details>
+
+    <div class="row"><button type="button" class="ghost" id="again">คำนวณใบใหม่</button></div>
+  </section>
+
+  <footer class="foot">
+    <p>AI อ่านตาราง (Qwen บน Cloudflare Workers AI) · การคำนวณทั้งหมดทำด้วยโค้ดธรรมดา ไม่ใช้ AI เพื่อไม่ให้คิดเลขผิด · ตรวจผลกับใบจริงก่อนใช้งานเสมอ</p>
+    <p>โดย <a href="https://atomengineer.site" target="_blank" rel="noopener">Rawich Sripian</a> · <a href="https://github.com/rawichsripian-art/transcript-gpa-ai" target="_blank" rel="noopener">source code on GitHub</a></p>
+  </footer>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

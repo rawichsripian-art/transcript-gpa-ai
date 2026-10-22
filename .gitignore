@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.dev.vars
+*.log
+
+# Never commit real transcripts: keep any test files with personal data here
+private/
+*.real.*
