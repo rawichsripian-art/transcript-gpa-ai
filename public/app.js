@@ -195,5 +195,7 @@ $('sample').addEventListener('click', async () => {
   try { show(await (await fetch('sample-result.json')).json()); }
   catch (e) { status('โหลดตัวอย่างไม่สำเร็จ', e.message, true); $('upload').hidden = false; }
 });
+// transcript.atomengineer.site/#demo opens straight into the sample result
+if (location.hash === '#demo') $('sample').click();
 $('csv').addEventListener('click', downloadCsv);
 $('again').addEventListener('click', () => { $('results').hidden = true; $('upload').hidden = false; $('status').hidden = true; window.scrollTo(0, 0); });
