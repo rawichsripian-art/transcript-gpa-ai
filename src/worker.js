@@ -5,9 +5,8 @@
 
 import { termKey } from '../public/gpa.js';
 
+// Chosen after comparing vision models on real transcripts (see README)
 const MODEL = '@cf/qwen/qwen3.8-27b';
-// Vision models allowed via ?model= (used to compare accuracy); the default is MODEL
-const MODELS = new Set([MODEL, '@cf/google/gemma-4-26b-a4b-it', '@cf/meta/llama-4-scout-17b-16e-instruct', '@cf/mistralai/mistral-small-3.1-24b-instruct']);
 const MAX_PAGES = 4;
 const MAX_PAGE_BYTES = 2_500_000; // per data URL, about a 1.8 MB JPEG
 
@@ -78,17 +77,17 @@ async function readPage(env, dataUrl, model) {
     // Non-streaming calls are cut off at about 2 minutes; a long table can take longer
     stream: true,
   });
-  const text = await collectStream(out);
+  const { text, usage } = await collectStream(out);
   const start = text.indexOf('{'), end = text.lastIndexOf('}');
   if (start < 0 || end < start) throw new Error('No JSON in model output: ' + text.slice(0, 200));
-  return JSON.parse(text.slice(start, end + 1));
+  return { ...JSON.parse(text.slice(start, end + 1)), usage };
 }
 
 // Read a Workers AI server-sent-event stream and join the text pieces.
 // Handles both the Workers AI shape {response} and the OpenAI shape {choices[0].delta.content}.
 async function collectStream(stream) {
   const reader = stream.pipeThrough(new TextDecoderStream()).getReader();
-  let buf = '', text = '';
+  let buf = '', text = '', usage = null;
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -101,10 +100,11 @@ async function collectStream(stream) {
       try {
         const evt = JSON.parse(data);
         text += evt.response ?? evt.choices?.[0]?.delta?.content ?? '';
+        if (evt.usage) usage = evt.usage;
       } catch {}
     }
   }
-  return text;
+  return { text, usage };
 }
 
 // Assign each course to the most recent term heading before it, across all pages.
@@ -129,6 +129,18 @@ function merge(results) {
   };
 }
 
+// Count pages per UTC day (when the Workers AI free quota resets) and refuse once the
+// daily budget is used. KV is eventually consistent, so this is a soft cap, which is enough here.
+async function reservePages(env, n) {
+  if (!env.USAGE) return true;
+  const limit = Number(env.DAILY_PAGES) || 8;
+  const key = 'pages:' + new Date().toISOString().slice(0, 10);
+  const used = Number(await env.USAGE.get(key)) || 0;
+  if (used + n > limit) return false;
+  await env.USAGE.put(key, String(used + n), { expirationTtl: 2 * 86400 });
+  return true;
+}
+
 async function handleExtract(request, env) {
   const ip = request.headers.get('cf-connecting-ip') || 'local';
   if (env.LIMITER) {
@@ -146,11 +158,14 @@ async function handleExtract(request, env) {
     if (p.length > MAX_PAGE_BYTES) return json({ error: 'A page image is too large.' }, 413);
   }
 
-  const asked = new URL(request.url).searchParams.get('model');
-  const model = MODELS.has(asked) ? asked : MODEL;
+  if (!(await reservePages(env, pages.length))) {
+    return json({ error: 'วันนี้ใช้โควตา AI ฟรีครบแล้ว ลองใหม่พรุ่งนี้หลัง 7 โมงเช้า (เวลาไทย) หรือกด "ลองกับใบตัวอย่าง" ได้เลย' }, 429);
+  }
+
   try {
-    const results = await Promise.all(pages.map(p => readPage(env, p, model)));
-    return json({ ...merge(results), model });
+    const results = await Promise.all(pages.map(p => readPage(env, p, MODEL)));
+    const usage = results.reduce((u, r) => ({ input: u.input + (r.usage?.prompt_tokens || 0), output: u.output + (r.usage?.completion_tokens || 0) }), { input: 0, output: 0 });
+    return json({ ...merge(results), model: MODEL, usage });
   } catch (e) {
     return json({ error: 'The AI could not read this file. Try a clearer scan.', detail: String(e?.message || e).slice(0, 300) }, 502);
   }

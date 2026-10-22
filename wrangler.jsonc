@@ -5,8 +5,19 @@
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "public" },
   "ai": { "binding": "AI", "remote": true },
-  // 10 extractions per minute per visitor, to stay inside the free daily AI quota
+  // Per-day page counter, so the app stays inside the free Workers AI quota
+  "kv_namespaces": [
+    { "binding": "USAGE", "id": "424baf3b8c464aa0867f33b8a021ec6d" }
+  ],
+  "vars": {
+    // One page costs about 1,000 neurons; the free plan includes 10,000 per day
+    "DAILY_PAGES": "8"
+  },
+  // 10 extractions per minute per visitor
   "ratelimits": [
     { "name": "LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "routes": [
+    { "pattern": "transcript.atomengineer.site", "custom_domain": true }
   ]
 }

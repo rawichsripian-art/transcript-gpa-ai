@@ -4,6 +4,8 @@
 
 อัปโหลดใบ ปพ.1 แล้วได้ตาราง หน่วยกิต / เกรดเฉลี่ย แยกตาม 8 กลุ่มสาระและแต่ละภาคเรียน ทันที ใช้ฟรี
 
+**Try it: [transcript.atomengineer.site](https://transcript.atomengineer.site)** (the "ลองกับใบตัวอย่าง" button shows a demo without uploading anything)
+
 ![Sample transcript (made-up data)](public/sample-transcript.jpg)
 
 ## How it works
@@ -37,6 +39,7 @@ The design rule is **the AI reads, the code calculates**:
 - **The AI should copy mistakes, not fix them.** The real transcript had "21.0" credits where it meant "1.0" (a stray pen mark). The AI copied it faithfully, `gpa.js` flagged it as "probably 1.0", and the user corrects it in the table.
 - **Thai transcripts truncate GPA instead of rounding** (3.6875 → 3.68). The app shows truncated values and accepts either when checking against the school's numbers.
 - **Reasoning ("thinking") mode made the model time out** after 2 minutes. Turning it off and streaming the response brought one page to about a minute.
+- **Free has a budget.** One page uses about 3,900 input and 2,800 output tokens, roughly 1,000 of the 10,000 free Workers AI "neurons" per day. The worker counts pages per day in Workers KV and stops at 8, and the demo button replays a saved AI result instead of calling the AI.
 
 ## Privacy
 
@@ -46,7 +49,7 @@ The design rule is **the AI reads, the code calculates**:
 
 ## Run it yourself
 
-Needs [Node.js](https://nodejs.org) and a free [Cloudflare](https://dash.cloudflare.com/sign-up) account.
+Needs [Node.js](https://nodejs.org) and a free [Cloudflare](https://dash.cloudflare.com/sign-up) account. Before deploying, create your own KV namespace (`npx wrangler kv namespace create USAGE`), put its id in `wrangler.jsonc`, and change or remove the `routes` custom domain.
 
 ```bash
 git clone https://github.com/rawichsripian-art/transcript-gpa-ai
@@ -75,7 +78,8 @@ powershell -File tools/render-sample.ps1
 
 ## Limits
 
-- Up to 4 pages per file. Clear scans work best.
+- Up to 4 pages per file and about 8 pages per day for everyone together (free quota). Clear scans work best.
+- Reading one page takes about a minute.
 - Made for the Thai basic-education curriculum (ปพ.1). Other formats may need prompt changes.
 - Always check the result against your real transcript before using it for an application.
 

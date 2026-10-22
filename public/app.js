@@ -86,16 +86,19 @@ async function run(file) {
     status('กำลังเตรียมไฟล์…');
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
     const pages = isPdf ? await pdfToImages(file) : await imageToJpeg(file);
-    const data = await extract(pages);
-    const terms = sortTerms(data.terms || []).filter(t => t.courses?.length);
-    if (!terms.length) throw new Error('AI ไม่พบรายวิชาในไฟล์นี้ ลองไฟล์ที่ชัดขึ้น');
-    state = { terms, reported: data.reported || [], cumulative: data.cumulative || 0 };
-    $('status').hidden = true;
-    render();
+    show(await extract(pages));
   } catch (e) {
     status('อ่านไฟล์ไม่สำเร็จ', e.message || String(e), true);
     $('upload').hidden = false;
   }
+}
+
+function show(data) {
+  const terms = sortTerms(data.terms || []).filter(t => t.courses?.length);
+  if (!terms.length) throw new Error('AI ไม่พบรายวิชาในไฟล์นี้ ลองไฟล์ที่ชัดขึ้น');
+  state = { terms, reported: data.reported || [], cumulative: data.cumulative || 0 };
+  $('status').hidden = true;
+  render();
 }
 
 // ---------- results ----------
@@ -185,9 +188,12 @@ $('file').addEventListener('change', e => { const f = e.target.files[0]; e.targe
 ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) run(f); });
+// The sample shows what the AI returned for sample-transcript.jpg earlier,
+// so trying the demo is instant and doesn't use the daily AI quota
 $('sample').addEventListener('click', async () => {
-  const blob = await (await fetch('sample-transcript.jpg')).blob();
-  run(new File([blob], 'sample-transcript.jpg', { type: 'image/jpeg' }));
+  $('upload').hidden = true;
+  try { show(await (await fetch('sample-result.json')).json()); }
+  catch (e) { status('โหลดตัวอย่างไม่สำเร็จ', e.message, true); $('upload').hidden = false; }
 });
 $('csv').addEventListener('click', downloadCsv);
 $('again').addEventListener('click', () => { $('results').hidden = true; $('upload').hidden = false; $('status').hidden = true; window.scrollTo(0, 0); });
