@@ -126,11 +126,12 @@ function render() {
   // area x term matrix
   const used = AREAS.filter(a => r.areas[a.id].courses > 0);
   if (r.areas.other.courses) used.push({ id: 'other', no: null, th: 'อื่น ๆ' });
+  const areaCell = a => el('td', {}, el('span', { class: 'code' }, a.id === 'other' ? '?' : a.id), ' ', a.th);
   const cell = b => b.courses ? el('td', { class: 'n' }, `${fmtCr(b.credits)} / `, el('b', {}, fmt(b.gpa))) : el('td', { class: 'dash' }, '–');
   $('matrix').replaceChildren(
     el('thead', {}, el('tr', {}, el('th', {}, 'กลุ่มสาระ'), ...r.terms.map(t => el('th', {}, t.term)), el('th', {}, 'รวม'))),
     el('tbody', {},
-      ...used.map(a => el('tr', {}, el('td', {}, a.no ? `(${a.no}) ${a.th}` : a.th), ...r.terms.map(t => cell(t.areas[a.id])), cell(r.areas[a.id]))),
+      ...used.map(a => el('tr', {}, areaCell(a), ...r.terms.map(t => cell(t.areas[a.id])), cell(r.areas[a.id]))),
       el('tr', { class: 'total' }, el('td', {}, 'รวมทั้งภาค'), ...r.terms.map(t => cell(t.total)), cell(r.overall)),
     ),
   );
@@ -158,7 +159,8 @@ function renderRows(r) {
       el('thead', {}, el('tr', {}, el('th', {}, 'รหัสวิชา'), el('th', {}, 'หน่วยกิต'), el('th', {}, 'เกรด'), el('th', {}, 'กลุ่มสาระ'), el('th', {}, ''))),
       el('tbody', {}, ...term.courses.map((c, i) => {
         const area = areaOf(c.code);
-        const name = area === 'activity' ? 'กิจกรรม (ไม่คิดเกรด)' : (AREAS.find(a => a.id === area)?.th || 'ไม่ทราบ');
+        const found = AREAS.find(a => a.id === area);
+        const name = area === 'activity' ? 'กิจกรรม (ไม่คิดเกรด)' : found ? `${found.id} ${found.th}` : 'ไม่ทราบ';
         return el('tr', { class: flagged.has(`${term.term}|${c.code}`) ? 'flag' : '' },
           el('td', {}, input(t, i, 'code')),
           el('td', {}, input(t, i, 'credits', { inputmode: 'decimal' })),
@@ -172,11 +174,11 @@ function renderRows(r) {
 
 function downloadCsv() {
   const r = compute(state.terms);
-  const head = ['กลุ่มสาระ', ...r.terms.flatMap(t => [`${t.term} หน่วยกิต`, `${t.term} เกรด`]), 'รวม หน่วยกิต', 'รวม เกรด'];
+  const head = ['รหัส', 'กลุ่มสาระ', ...r.terms.flatMap(t => [`${t.term} หน่วยกิต`, `${t.term} เกรด`]), 'รวม หน่วยกิต', 'รวม เกรด'];
   const pair = b => b.courses ? [b.credits, fmt(b.gpa)] : ['', ''];
   const lines = [head];
-  for (const a of AREAS.filter(a => r.areas[a.id].courses)) lines.push([a.no ? `(${a.no}) ${a.th}` : a.th, ...r.terms.flatMap(t => pair(t.areas[a.id])), ...pair(r.areas[a.id])]);
-  lines.push(['รวม', ...r.terms.flatMap(t => pair(t.total)), ...pair(r.overall)]);
+  for (const a of AREAS.filter(a => r.areas[a.id].courses)) lines.push([a.id, a.th, ...r.terms.flatMap(t => pair(t.areas[a.id])), ...pair(r.areas[a.id])]);
+  lines.push(['TOTAL', 'รวม', ...r.terms.flatMap(t => pair(t.total)), ...pair(r.overall)]);
   const csv = '﻿' + lines.map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   const a = el('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), download: 'transcript-gpa.csv' });
   a.click(); URL.revokeObjectURL(a.href);

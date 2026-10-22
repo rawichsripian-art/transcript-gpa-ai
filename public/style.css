@@ -63,7 +63,8 @@ td.n { font-family: "Inter", sans-serif; font-variant-numeric: tabular-nums; }
 td.n b { font-weight: 700; }
 tr.total td { font-weight: 700; background: var(--surface-2); }
 td.dash { color: var(--muted); }
-#matrix td:first-child { white-space: normal; min-width: 180px; }
+#matrix td:first-child { white-space: normal; min-width: 200px; }
+.code { display: inline-block; min-width: 46px; text-align: center; font: 700 12px/1.6 "Inter", sans-serif; letter-spacing: .03em; padding: 0 6px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); }
 
 details.card > summary { cursor: pointer; list-style: none; }
 details.card > summary::-webkit-details-marker { display: none; }

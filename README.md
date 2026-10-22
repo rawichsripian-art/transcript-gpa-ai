@@ -41,6 +41,22 @@ The design rule is **the AI reads, the code calculates**:
 - **Reasoning ("thinking") mode made the model time out** after 2 minutes. Turning it off and streaming the response brought one page to about a minute.
 - **Free has a budget.** One page uses about 3,900 input and 2,800 output tokens, roughly 1,000 of the 10,000 free Workers AI "neurons" per day. The worker counts pages per day in Workers KV and stops at 8, and the demo button replays a saved AI result instead of calling the AI.
 
+### Learning-area codes
+
+| Code | กลุ่มสาระ | Course codes starting with |
+|---|---|---|
+| THA | ภาษาไทย | ท |
+| MATH | คณิตศาสตร์ | ค |
+| SCI | วิทยาศาสตร์และเทคโนโลยี | ว |
+| SOC | สังคมศึกษา ศาสนา และวัฒนธรรม | ส |
+| HPE | สุขศึกษาและพลศึกษา | พ |
+| ART | ศิลปะ | ศ |
+| WORK | การงานอาชีพและเทคโนโลยี | ง |
+| FL | ภาษาต่างประเทศ | อ จ ญ ฝ ย ร ล ข |
+| IS | การศึกษาค้นคว้าด้วยตนเอง | I |
+
+Activities (ก) and pass/fail or incomplete grades (ผ มผ ร มส) are not counted in GPA.
+
 ## Privacy
 
 - Files go to Cloudflare Workers AI only to be read. Nothing is stored, and Cloudflare does not train models on Workers AI inputs.

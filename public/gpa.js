@@ -2,16 +2,17 @@
 // the rows, and everything here is deterministic so it can be tested and trusted.
 
 // Learning areas (กลุ่มสาระการเรียนรู้) by the first letter of the course code
+// id is the short code shown in tables and CSV (THA, MATH, SCI, ...)
 export const AREAS = [
-  { id: 'th',  no: 21, th: 'ภาษาไทย',                         en: 'Thai',                         letters: 'ท' },
-  { id: 'ma',  no: 22, th: 'คณิตศาสตร์',                       en: 'Mathematics',                  letters: 'ค' },
-  { id: 'sc',  no: 23, th: 'วิทยาศาสตร์และเทคโนโลยี',           en: 'Science & Technology',         letters: 'ว' },
-  { id: 'so',  no: 24, th: 'สังคมศึกษา ศาสนา และวัฒนธรรม',      en: 'Social Studies',               letters: 'ส' },
-  { id: 'pe',  no: 25, th: 'สุขศึกษาและพลศึกษา',                en: 'Health & PE',                  letters: 'พ' },
-  { id: 'ar',  no: 26, th: 'ศิลปะ',                            en: 'Arts',                         letters: 'ศ' },
-  { id: 'ca',  no: 27, th: 'การงานอาชีพและเทคโนโลยี',           en: 'Occupations & Technology',     letters: 'ง' },
-  { id: 'fl',  no: 28, th: 'ภาษาต่างประเทศ',                    en: 'Foreign Languages',            letters: 'อจญฝยรลข' },
-  { id: 'is',  no: null, th: 'IS (การศึกษาค้นคว้าด้วยตนเอง)',   en: 'Independent Study',            letters: 'I' },
+  { id: 'THA',  no: 21, th: 'ภาษาไทย',                         en: 'Thai',                         letters: 'ท' },
+  { id: 'MATH', no: 22, th: 'คณิตศาสตร์',                       en: 'Mathematics',                  letters: 'ค' },
+  { id: 'SCI',  no: 23, th: 'วิทยาศาสตร์และเทคโนโลยี',           en: 'Science & Technology',         letters: 'ว' },
+  { id: 'SOC',  no: 24, th: 'สังคมศึกษา ศาสนา และวัฒนธรรม',      en: 'Social Studies',               letters: 'ส' },
+  { id: 'HPE',  no: 25, th: 'สุขศึกษาและพลศึกษา',                en: 'Health & PE',                  letters: 'พ' },
+  { id: 'ART',  no: 26, th: 'ศิลปะ',                            en: 'Arts',                         letters: 'ศ' },
+  { id: 'WORK', no: 27, th: 'การงานอาชีพและเทคโนโลยี',           en: 'Occupations & Technology',     letters: 'ง' },
+  { id: 'FL',   no: 28, th: 'ภาษาต่างประเทศ',                    en: 'Foreign Languages',            letters: 'อจญฝยรลข' },
+  { id: 'IS',   no: null, th: 'การศึกษาค้นคว้าด้วยตนเอง',         en: 'Independent Study',            letters: 'I' },
 ];
 const ACTIVITY = 'ก'; // กิจกรรมพัฒนาผู้เรียน: pass/fail, no grade points
 

@@ -22,13 +22,13 @@ const sample = [
 ];
 
 test('learning area from the course code', () => {
-  assert.equal(areaOf('ท31101'), 'th');
-  assert.equal(areaOf('ค32208'), 'ma');
-  assert.equal(areaOf('ว31294'), 'sc');
-  assert.equal(areaOf('อ30202'), 'fl');
-  assert.equal(areaOf('จ31201'), 'fl'); // Chinese is also a foreign language
-  assert.equal(areaOf('I30201'), 'is');
-  assert.equal(areaOf('i30201'), 'is');
+  assert.equal(areaOf('ท31101'), 'THA');
+  assert.equal(areaOf('ค32208'), 'MATH');
+  assert.equal(areaOf('ว31294'), 'SCI');
+  assert.equal(areaOf('อ30202'), 'FL');
+  assert.equal(areaOf('จ31201'), 'FL'); // Chinese is also a foreign language
+  assert.equal(areaOf('I30201'), 'IS');
+  assert.equal(areaOf('i30201'), 'IS');
   assert.equal(areaOf('ก30965'), 'activity');
   assert.equal(areaOf('X1'), 'other');
 });
@@ -63,10 +63,10 @@ test('per-term and overall GPA', () => {
 
 test('GPA by learning area across terms', () => {
   const r = compute(sample);
-  assert.deepEqual([r.areas.ma.credits, r.areas.ma.gpa], [4, 2]);     // (6 + 2) / 4
-  assert.deepEqual([r.areas.th.credits, r.areas.th.gpa], [2, 3]);     // (4 + 2) / 2
-  assert.deepEqual([r.areas.so.credits, r.areas.so.gpa], [0, null]);  // only an incomplete course
-  assert.deepEqual([r.areas.is.credits, r.areas.is.gpa], [1, 4]);
+  assert.deepEqual([r.areas.MATH.credits, r.areas.MATH.gpa], [4, 2]);     // (6 + 2) / 4
+  assert.deepEqual([r.areas.THA.credits, r.areas.THA.gpa], [2, 3]);     // (4 + 2) / 2
+  assert.deepEqual([r.areas.SOC.credits, r.areas.SOC.gpa], [0, null]);  // only an incomplete course
+  assert.deepEqual([r.areas.IS.credits, r.areas.IS.gpa], [1, 4]);
 });
 
 test('suspicious values are flagged for a person to check', () => {
