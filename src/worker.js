@@ -169,6 +169,75 @@ async function markSpent(env, account) {
   if (env.USAGE) await env.USAGE.put(dayKey(account), String(budget(env, account)), { expirationTtl: 2 * 86400 });
 }
 
+// ---- Usage log and remaining quota (no transcript content, no raw IP) ----
+// Counters are kept by this worker (soft caps, see above); they are not Cloudflare's own meter,
+// which can run out earlier if the same account is used for other AI work.
+const LOG_TTL = 30 * 86400; // keep log lines 30 days
+const today = () => new Date().toISOString().slice(0, 10);
+
+async function quotaStatus(env) {
+  const out = {};
+  const accounts = ['own', ...(hasBorrowed(env) ? ['borrowed'] : [])];
+  for (const a of accounts) {
+    const limit = budget(env, a);
+    const used = env.USAGE ? Number(await env.USAGE.get(dayKey(a))) || 0 : 0;
+    out[a] = { limit, used: Math.min(used, limit), remaining: Math.max(limit - used, 0) };
+  }
+  out.remaining = Object.values(out).reduce((n, q) => n + q.remaining, 0);
+  const next = new Date(); next.setUTCHours(24, 0, 0, 0);
+  out.resetsAt = next.toISOString(); // 00:00 UTC = 07:00 Thailand
+  return out;
+}
+
+// Short one-way fingerprint so repeat visitors can be counted without storing the IP
+async function fingerprint(env, ip) {
+  const data = new TextEncoder().encode((env.LOG_SALT || 'transcript-ai') + ip);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(hash).slice(0, 5)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// outcome: ok | quota | rate_limited | bad_request | error
+async function logEvent(env, request, evt) {
+  if (!env.USAGE) return;
+  try {
+    const now = new Date();
+    const line = {
+      t: now.toISOString(),
+      country: request.cf?.country || null,
+      visitor: await fingerprint(env, request.headers.get('cf-connecting-ip') || 'local'),
+      ...evt,
+    };
+    await env.USAGE.put(`log:${line.t}:${crypto.randomUUID().slice(0, 4)}`, JSON.stringify(line), { expirationTtl: LOG_TTL });
+    // Per-day totals (read-modify-write on KV: approximate if two requests land at once)
+    const key = `stats:${today()}`;
+    const day = JSON.parse((await env.USAGE.get(key)) || '{}');
+    day.requests = (day.requests || 0) + 1;
+    day[evt.outcome] = (day[evt.outcome] || 0) + 1;
+    if (evt.pages) day.pages = (day.pages || 0) + evt.pages;
+    if (evt.account) day[`pages_${evt.account}`] = (day[`pages_${evt.account}`] || 0) + (evt.pages || 0);
+    if (evt.usage) { day.tokens_in = (day.tokens_in || 0) + evt.usage.input; day.tokens_out = (day.tokens_out || 0) + evt.usage.output; }
+    await env.USAGE.put(key, JSON.stringify(day), { expirationTtl: LOG_TTL });
+  } catch {} // logging must never break the app
+}
+
+// GET /api/usage?days=7  (header "Authorization: Bearer <ADMIN_TOKEN>"; disabled unless the secret is set)
+async function handleUsage(request, env) {
+  if (!env.ADMIN_TOKEN || !env.USAGE) return json({ error: 'Not found' }, 404);
+  const given = request.headers.get('authorization') || '';
+  if (given !== `Bearer ${env.ADMIN_TOKEN}`) return json({ error: 'Unauthorized' }, 401);
+  const days = Math.min(Math.max(Number(new URL(request.url).searchParams.get('days')) || 7, 1), 30);
+  const stats = {};
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const v = await env.USAGE.get(`stats:${d}`);
+    if (v) stats[d] = JSON.parse(v);
+  }
+  const list = await env.USAGE.list({ prefix: 'log:', limit: 1000 });
+  const keys = list.keys.map(k => k.name).sort().slice(-50).reverse();
+  const recent = await Promise.all(keys.map(async k => JSON.parse((await env.USAGE.get(k)) || 'null')));
+  return json({ quota: await quotaStatus(env), stats, recent: recent.filter(Boolean) });
+}
+
 // Try own first, then borrowed. Returns the results and which account did the work.
 async function readAll(env, pages) {
   const accounts = ['own', ...(hasBorrowed(env) ? ['borrowed'] : [])];
@@ -187,42 +256,49 @@ async function readAll(env, pages) {
   return null; // every budget used
 }
 
-async function handleExtract(request, env) {
+async function handleExtract(request, env, ctx) {
+  const started = Date.now();
+  const log = evt => { const p = logEvent(env, request, { ms: Date.now() - started, ...evt }); ctx?.waitUntil?.(p); return p; };
   const ip = request.headers.get('cf-connecting-ip') || 'local';
   if (env.LIMITER) {
     const { success } = await env.LIMITER.limit({ key: ip });
-    if (!success) return json({ error: 'Too many requests. Please wait a minute and try again.' }, 429);
+    if (!success) { log({ outcome: 'rate_limited' }); return json({ error: 'Too many requests. Please wait a minute and try again.' }, 429); }
   }
 
   let body;
-  try { body = await request.json(); } catch { return json({ error: 'Send JSON: { "pages": [dataURL, ...] }' }, 400); }
+  try { body = await request.json(); } catch { log({ outcome: 'bad_request' }); return json({ error: 'Send JSON: { "pages": [dataURL, ...] }' }, 400); }
   const pages = Array.isArray(body?.pages) ? body.pages : [];
-  if (!pages.length) return json({ error: 'No pages received.' }, 400);
+  if (!pages.length) { log({ outcome: 'bad_request' }); return json({ error: 'No pages received.' }, 400); }
   if (pages.length > MAX_PAGES) return json({ error: `At most ${MAX_PAGES} pages per transcript.` }, 400);
   for (const p of pages) {
     if (typeof p !== 'string' || !/^data:image\/(jpeg|png|webp);base64,/.test(p)) return json({ error: 'Pages must be JPEG/PNG/WebP data URLs.' }, 400);
     if (p.length > MAX_PAGE_BYTES) return json({ error: 'A page image is too large.' }, 413);
   }
 
-  const quotaGone = () => json({ error: 'วันนี้ใช้โควตา AI ฟรีครบแล้ว ลองใหม่พรุ่งนี้หลัง 7 โมงเช้า (เวลาไทย) หรือกด "ลองกับใบตัวอย่าง" ได้เลย' }, 429);
+  const quotaGone = async () => { log({ outcome: 'quota', pages: pages.length, quota: (await quotaStatus(env)).remaining }); return json({ error: 'วันนี้ใช้โควตา AI ฟรีครบแล้ว ลองใหม่พรุ่งนี้หลัง 7 โมงเช้า (เวลาไทย) หรือกด "ลองกับใบตัวอย่าง" ได้เลย' }, 429); };
   try {
     const done = await readAll(env, pages);
-    if (!done) return quotaGone();
+    if (!done) return await quotaGone();
     const usage = done.results.reduce((u, r) => ({ input: u.input + (r.usage?.prompt_tokens || 0), output: u.output + (r.usage?.completion_tokens || 0) }), { input: 0, output: 0 });
-    return json({ ...merge(done.results), model: MODEL, account: done.account, usage });
+    const quota = await quotaStatus(env);
+    log({ outcome: 'ok', pages: pages.length, account: done.account, usage, quota: quota.remaining });
+    return json({ ...merge(done.results), model: MODEL, account: done.account, usage, quota: { remaining: quota.remaining, resetsAt: quota.resetsAt } });
   } catch (e) {
-    if (QUOTA_ERROR.test(String(e?.message || e))) return quotaGone();
+    if (QUOTA_ERROR.test(String(e?.message || e))) return await quotaGone();
+    log({ outcome: 'error', pages: pages.length, error: String(e?.message || e).slice(0, 160) });
     return json({ error: 'The AI could not read this file. Try a clearer scan.', detail: String(e?.message || e).slice(0, 300) }, 502);
   }
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname === '/api/extract') {
       if (request.method !== 'POST') return json({ error: 'Use POST' }, 405);
-      return handleExtract(request, env);
+      return handleExtract(request, env, ctx);
     }
+    if (url.pathname === '/api/quota' && request.method === 'GET') return json(await quotaStatus(env));
+    if (url.pathname === '/api/usage' && request.method === 'GET') return handleUsage(request, env);
     return env.ASSETS.fetch(request);
   },
 };

@@ -104,3 +104,11 @@ powershell -File tools/render-sample.ps1
 ## License
 
 MIT · made by [Rawich Sripian](https://atomengineer.site)
+
+
+## Usage log and remaining quota
+
+- `GET /api/quota` (public) shows how many pages are left today per account and when the counter resets (00:00 UTC = 07:00 Thailand). Each `/api/extract` response also carries the remaining total.
+- Every request writes one line to the `USAGE` KV for 30 days: time, country, a short one-way visitor fingerprint, outcome (`ok` / `quota` / `rate_limited` / `bad_request` / `error`), pages, account used, time taken and AI tokens. It never stores the transcript, the raw IP or any names. Daily totals are kept under `stats:YYYY-MM-DD`.
+- `GET /api/usage?days=7` returns the totals and the last 50 lines. It stays off until you set a secret with `wrangler secret put ADMIN_TOKEN`; then call it with `Authorization: Bearer <token>`. Optionally set `LOG_SALT` the same way so the visitor fingerprint can't be guessed.
+- The counters are this worker's own soft caps. Cloudflare's real free allowance can run out sooner if the same account does other AI work.
