@@ -31,6 +31,24 @@ function status(main, sub = '', error = false) {
   $('status-sub').textContent = sub;
 }
 
+// ---------- remaining free quota ----------
+let pagesLeft = null; // null = unknown (never block the user on a failed lookup)
+
+function showQuota(q) {
+  if (!q || typeof q.remaining !== 'number') return;
+  pagesLeft = q.remaining;
+  const el = $('quota');
+  el.classList.toggle('out', pagesLeft === 0);
+  el.classList.toggle('low', pagesLeft > 0 && pagesLeft <= 2);
+  el.textContent = pagesLeft === 0
+    ? 'โควตา AI ฟรีของวันนี้หมดแล้ว · รีเซ็ตเวลา 07:00 น. (เวลาไทย) · กด "ลองกับใบตัวอย่าง" เพื่อดูตัวอย่างได้'
+    : 'โควตา AI ฟรีวันนี้เหลือ ' + pagesLeft + ' หน้า · รีเซ็ตเวลา 07:00 น. (เวลาไทย) · ปุ่มใบตัวอย่างไม่เรียก AI และไม่กินโควตา';
+  $('drop').classList.toggle('disabled', pagesLeft === 0);
+}
+async function refreshQuota() {
+  try { showQuota(await (await fetch('/api/quota')).json()); } catch {}
+}
+
 // ---------- file -> page images ----------
 async function canvasToJpeg(canvas) { return canvas.toDataURL('image/jpeg', 0.85); }
 
@@ -86,9 +104,17 @@ async function run(file) {
     status('กำลังเตรียมไฟล์…');
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
     const pages = isPdf ? await pdfToImages(file) : await imageToJpeg(file);
-    show(await extract(pages));
+    if (pagesLeft !== null && pages.length > pagesLeft) {
+      throw new Error(pagesLeft === 0
+        ? 'โควตา AI ฟรีของวันนี้หมดแล้ว ลองใหม่หลัง 07:00 น. พรุ่งนี้ หรือกด "ลองกับใบตัวอย่าง"'
+        : 'ไฟล์นี้มี ' + pages.length + ' หน้า แต่วันนี้เหลือโควตาแค่ ' + pagesLeft + ' หน้า ลองไฟล์ที่สั้นกว่านี้ หรือรอรีเซ็ตเวลา 07:00 น.');
+    }
+    const data = await extract(pages);
+    showQuota(data.quota);
+    show(data);
   } catch (e) {
     status('อ่านไฟล์ไม่สำเร็จ', e.message || String(e), true);
+    refreshQuota();
     $('upload').hidden = false;
   }
 }
@@ -200,4 +226,5 @@ $('sample').addEventListener('click', async () => {
 // transcript.atomengineer.site/#demo opens straight into the sample result
 if (location.hash === '#demo') $('sample').click();
 $('csv').addEventListener('click', downloadCsv);
+refreshQuota();
 $('again').addEventListener('click', () => { $('results').hidden = true; $('upload').hidden = false; $('status').hidden = true; window.scrollTo(0, 0); });

@@ -36,6 +36,9 @@ button:disabled { opacity: .5; cursor: default; }
 .drop-main { font-weight: 600; font-size: 18px; }
 .drop-sub { color: var(--muted); font-size: 14px; }
 .privacy { font-size: 13px; color: var(--muted); margin: 14px 0 0; }
+.quota.low { color: #8a5a00; font-weight: 600; }
+.quota.out { color: #b42318; font-weight: 600; }
+.drop.disabled { opacity: .45; pointer-events: none; }
 
 .status { display: flex; align-items: center; gap: 14px; }
 .spinner { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; flex: none; }
